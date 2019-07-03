@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Trabalho de CG - Luis Fernando Lins</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Monospace;
+            font-size: 13px;
+            line-height: 24px;
+        }
+    </style>
+</head>
+<body>
+    <script src="js/three.js"></script>
+    <script src="js/stats.min.js"></script>
+    <script src="js/BufferGeometryUtils.js"></script>
+    <script src="js/TrackballControls.js"></script>
+    <script src="js/OrbitControls.js"></script>
+
+    <script>
+        var container, stats, camera, controls, scene, renderer;
+        var objects = [];
+        var objects2 = new THREE.Group();
+        let sphere = new THREE.SphereGeometry(50, 32, 32);
+        let material = new THREE.MeshLambertMaterial({ color: Math.random() * 0x000 })
+        let circle = new THREE.Mesh(sphere, material);
+        var plane = null;
+        
+        var selectedObject = null;
+        var selectedObjectToDrag = null;
+        var selectedObjectToRot = null;
+        
+        var rotating = false;
+        var mouseDown = false;
+        var rotateStartPoint = new THREE.Vector3(0, 0, 1);
+        var rotateEndPoint = new THREE.Vector3(0, 0, 1);
+        var curQuaternion;
+        var windowHalfX = window.innerWidth / 2;
+        var windowHalfY = window.innerHeight / 2;
+        var cube;
+        var rotationSpeed = 10;
+        var lastMoveTimestamp,
+            moveReleaseTimeDelta = 50;
+        var startPoint = {
+            x: 0,
+            y: 0
+        };
+        var deltaX = 0,
+            deltaY = 0;
+        circle.visible = false;
+        material.transparent = true;
+        material.opacity = 0.3;
+
+        init();
+        animate();
+        function init() {
+            container = document.createElement('div');
+            document.body.appendChild(container);
+
+            var info = document.createElement('div');
+            info.style.position = 'absolute';
+            info.style.top = '10px';
+            info.style.width = '100%';
+            info.style.textAlign = 'center';
+            container.appendChild(info);
+
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 5000);
+            camera.position.z = 1500;
+            scene = new THREE.Scene();
+            plane = new THREE.Mesh(new THREE.PlaneBufferGeometry(5000, 5000, 8, 8), new THREE.MeshBasicMaterial({color: 0xffffff, opacity: 0.0, transparent:true}));
+            scene.add(plane);
+            scene.add(objects2);
+            scene.add(circle);
+
+            scene.background = new THREE.Color();
+            scene.add(new THREE.AmbientLight(0x505050)); 
+            var light = new THREE.SpotLight(0xffffff, 1.5);
+            light.position.set(0, 500, 2000);
+            light.angle = Math.PI / 9;
+            light.castShadow = true;
+            light.shadow.camera.near = 1000;
+            light.shadow.camera.far = 4000;
+            light.shadow.mapSize.width = 1024;
+            light.shadow.mapSize.height = 1024;
+            scene.add(light);
+            var geometry = new THREE.BoxBufferGeometry(60, 60, 60);
+            for (var i = 0; i < 15; i++) {
+                var object = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: Math.random() * 0xffffff }));
+                object.position.x = Math.random() * 1200 - 600;
+                object.position.y = Math.random() * 800 - 400;
+                object.position.z = Math.random() * 600 - 300;
+                object.rotation.x = ( Math.random() * 360 ) * Math.PI / 180;
+				object.rotation.y = ( Math.random() * 360 ) * Math.PI / 180;
+				object.rotation.z = ( Math.random() * 360 ) * Math.PI / 180;
+                object.scale.x = Math.random() * 2 + 1;
+                object.scale.y = Math.random() * 2 + 1;
+                object.scale.z = Math.random() * 2 + 1;
+                objects.push(object);
+                objects2.add(object);
+            }
+            
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFShadowMap;
+            container.appendChild(renderer.domElement);
+            controls = new THREE.TrackballControls(camera, renderer.domElement);
+            
+            
+            controls.rotateSpeed = 1.0;
+            controls.zoomSpeed = 1.2;
+            controls.panSpeed = 0.8;
+            controls.noZoom = false;
+            controls.enablePan = false;
+            
+            var box = new THREE.Box3().setFromObject(objects2);
+            var size = box.getSize(new THREE.Vector3()).length();
+            var center = box.getCenter(new THREE.Vector3());
+            controls.enabled = false;
+            stats = new Stats();
+            container.appendChild( stats.dom );
+            window.addEventListener('resize', onWindowResize, false);
+            window.addEventListener('dblclick', dblclick);
+            window.addEventListener('mousedown', onDocumentMouseDown2);
+            window.addEventListener('mouseup', onDocumentMouseUp2);
+            window.addEventListener('mousemove', onDocumentMouseMove2);
+            document.addEventListener( 'wheel', OnMousewheelchange, false );
+        }
+        var offset =  new THREE.Vector3();
+        var first = new THREE.Vector3();
+
+function projectOnTrackball(touchX, touchY)
+	{
+		var mouseOnBall = new THREE.Vector3();
+
+		mouseOnBall.set(
+			clamp(touchX / windowHalfX, -1, 1), clamp(-touchY / windowHalfY, -1, 1),
+			0.0
+		);
+
+		var length = mouseOnBall.length();
+
+		if (length > 1.0)
+		{
+			mouseOnBall.normalize();
+		}
+		else
+		{
+			mouseOnBall.z = Math.sqrt(1.0 - length * length);
+		}
+
+		return mouseOnBall;
+	}
+
+	function rotateMatrix(rotateStart, rotateEnd)
+	{
+		var axis = new THREE.Vector3(),
+			quaternion = new THREE.Quaternion();
+
+		var angle = Math.acos(rotateStart.dot(rotateEnd) / rotateStart.length() / rotateEnd.length());
+
+		if (angle)
+		{
+			axis.crossVectors(rotateStart, rotateEnd).normalize();
+			angle *= rotationSpeed;
+			quaternion.setFromAxisAngle(axis, angle);
+		}
+		return quaternion;
+}
+    function clamp(value, min, max)
+    {
+        return Math.min(Math.max(value, min), max);
+    }        
+
+
+      function onDocumentMouseDown2(event){
+            if(!circle.visible){
+                var mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                var mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+                var vector = new THREE.Vector3(mouseX, mouseY, -1);
+                vector.unproject(camera);
+                first.copy(vector);
+                raycaster.set( camera.position, vector.sub( camera.position ).normalize() );
+
+                var intersects = raycaster.intersectObjects(objects);
+        
+                if (intersects.length > 0) {
+                    controls.enabled = false;
+                    selectedObjectToDrag = intersects[0].object;
+                    var intersects = raycaster.intersectObject(plane);
+                    offset.copy(intersects[0].point).sub(plane.position);
+                }
+
+            } else{
+                    
+                    var mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                    var mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+                    
+                    mouseDown = true;
+                    rotating = true;
+                    var intersects = raycaster.intersectObjects(objects);
+                   
+                    if (intersects.length > 0) {
+                    selectedObjectToRot = intersects[0].object;
+                 
+                    startPoint = {
+                    x: event.clientX,
+                    y: event.clientY
+                    };
+
+                    rotateStartPoint = rotateEndPoint = projectOnTrackball(0, 0);
+
+                        }      
+            }
+        }
+
+      function onDocumentMouseUp2(event){
+            selectedObjectToDrag = null;
+            rotating = false;
+        }
+
+
+    function onDocumentMouseUp(event)
+    {
+
+        mouseDown = false;
+
+        document.removeEventListener('mousemove', onDocumentMouseMove, false);
+        document.removeEventListener('mouseup', onDocumentMouseUp, false);
+    }
+
+        var quaternion = new THREE.Quaternion();
+        
+        function onDocumentMouseMove2(event){
+            var mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            var mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            var vector = new THREE.Vector3(mouseX, mouseY, 1);
+            if(!circle.visible){        
+                event.preventDefault();
+                var mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                var mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+               
+                var vector = new THREE.Vector3(mouseX, mouseY, 1);
+                vector.unproject(camera);
+              
+                raycaster.set( camera.position, vector.sub( camera.position ).normalize() );
+                if (selectedObjectToDrag) {
+                    var intersects = raycaster.intersectObject(plane);
+                    selectedObjectToDrag.position.copy(intersects[0].point.sub(offset));
+                } else {
+            
+                    var intersects = raycaster.intersectObjects(objects);
+                    if (intersects.length > 0) {
+                        plane.position.copy(intersects[0].object.position);
+                        
+                        plane.lookAt(camera.position);
+                    }
+                }
+            } else {
+                if(rotating){
+                    
+                    deltaX = event.x - startPoint.x;
+                    deltaY = event.y - startPoint.y;
+
+                    handleRotation();
+   
+                    startPoint.x = event.x;
+                    startPoint.y = event.y;
+
+                    lastMoveTimestamp = new Date();
+
+                }
+            }
+        }
+        
+        
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        //
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+            stats.update();
+        }
+        function render() {
+            controls.update();
+			
+			
+            renderer.render(scene, camera);
+        
+
+        }
+
+        function dblclick(event) {
+
+            event.preventDefault();
+
+            var intersects = getIntersections(event.layerX, event.layerY);
+            if (intersects.length > 0) {
+                var res = intersects.filter(function (res) {
+                    return res && res.object;
+                })[0];
+                if (res && res.object) {
+                    if (selectedObject == res.object) {
+                        circle.visible = false;
+                        selectedObject = null;
+                        
+                    } else {
+                        
+                        selectedObject = res.object;
+                        box = new THREE.Box3().setFromObject(selectedObject)
+                        size = box.getSize(new THREE.Vector3());
+                        center = box.getCenter(new THREE.Vector3());
+                        circle.position.x = center.x;
+                        circle.position.y = center.y;
+                        circle.position.z = center.z;
+                        let ball = new THREE.Sphere();
+                        box.getBoundingSphere(ball);
+                        circle.scale.x = ball.radius / 50;
+                        circle.scale.y = ball.radius / 50;
+                        circle.scale.z = ball.radius / 50;
+                        circle.visible = true;
+                        
+                    }
+                }
+            } else {
+                box = new THREE.Box3().setFromObject(objects2);
+                size = box.getSize(new THREE.Vector3());
+                center = box.getCenter(new THREE.Vector3());
+                circle.position.x = 0;
+                circle.position.y = 0;
+                circle.position.z = 0;
+                let ball = new THREE.Sphere();
+                box.getBoundingSphere(ball);
+                circle.scale.x = ball.radius / 50;
+                circle.scale.y = ball.radius / 50;
+                circle.scale.z = ball.radius / 50;
+                circle.visible = circle.visible?false:true;
+                controls.enabled = circle.visible;
+                
+
+            }
+            var mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            var mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            first = new THREE.Vector3(mouseX, mouseY, 1);
+
+        }
+
+
+        function onDocumentMouseMove(event) {
+            event.preventDefault();
+            if (selectedObject) { 
+                selectedObject = null;
+            }
+            var intersects = getIntersections(event.layerX, event.layerY);
+            if (intersects.length > 0) {
+                var res = intersects.filter(function (res) {
+                    return res && res.object;
+                })[0];
+                if (res && res.object) {
+                    selectedObject = res.object;
+
+                }
+            }
+        }
+
+
+        var raycaster = new THREE.Raycaster();
+        var mouseVector = new THREE.Vector3();
+        
+        function getIntersections(x, y) {
+            x = (x / window.innerWidth) * 2 - 1;
+            y = - (y / window.innerHeight) * 2 + 1;
+            mouseVector.set(x, y, 0.5);
+            raycaster.setFromCamera(mouseVector, camera);
+            return raycaster.intersectObject(objects2, true);
+        }
+
+        var handleRotation = function()
+    {
+        rotateEndPoint = projectOnTrackball(deltaX, deltaY);
+
+        var rotateQuaternion = rotateMatrix(rotateStartPoint, rotateEndPoint);
+        curQuaternion = selectedObjectToRot.quaternion;
+        curQuaternion.multiplyQuaternions(rotateQuaternion, curQuaternion);
+        curQuaternion.normalize();
+        selectedObjectToRot.setRotationFromQuaternion(curQuaternion);
+
+        rotateEndPoint = rotateStartPoint;
+    }
+        
+        function OnMousewheelchange(e){
+				let zoom = (camera.zoom / (5 ** (event.deltaY/250.0)));
+				if (zoom <= 1E+12 && zoom >= 1E-12){
+					camera.zoom = zoom;
+					camera.updateProjectionMatrix();
+				}
+							
+			}
+
+
+
+    </script>
+</body>
+</html>
