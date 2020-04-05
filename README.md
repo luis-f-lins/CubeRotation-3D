@@ -13,3 +13,5 @@ To **rotate a cube**, double-click on any cube and rotate the sphere that appear
 To **rotate the whole scene**, double-click outside any cube and rotate the sphere that appears around the scene.
 
 To **drag a cube**, just click and drag any cube you want.
+
+You can also **zoom in and out of the scene** with your mouse/trackpad.
